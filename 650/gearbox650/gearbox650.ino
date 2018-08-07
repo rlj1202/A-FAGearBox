@@ -46,17 +46,16 @@ int btnLaunchCtrLast = LOW;
 /*
  * Tasks
  */
-// serial
-int taskStateSerial = 0;
-long taskTimeSerial = 0;
- 
-// gear shifting
-int taskStateGearShifting = 0;
-long taskTimeGearShifting = 0;
+struct Task {
+  int state;
+  long time;
 
-// launch control
-int taskStateLaunchCtr = 0;
-long taskTimeLaunchCtr = 0;
+  Task(int state = 0, long time = 0) : state(state), time(time) {}
+};
+
+Task taskSerial; // Serial communication
+Task taskGear; // Gear shifting
+Task taskLaunch; // Launch control
 
 void setup() {
   // init serial communication
@@ -87,7 +86,7 @@ void setup() {
 
 void loop() {
   // serial
-  if (taskStateSerial == 0) {
+  if (taskSerial.state == 0) {
     Serial.print("BTN_SHIFT_UP: ");
     Serial.print(digitalRead(PIN_BTN_SHIFT_UP));
     Serial.print(", BTN_SHIFT_DOWN: ");
@@ -97,11 +96,11 @@ void loop() {
     //Serial.print(", taskStateLaunchCtr: ");
     //Serial.print(taskStateLaunchCtr);
     Serial.println();
-    taskStateSerial++;
-    taskTimeSerial = millis();
-  } else if (taskStateSerial == 1) {
-    if (millis() - taskTimeSerial >= 100) {
-      taskStateSerial = 0;
+    taskSerial.state++;
+    taskSerial.time = millis();
+  } else if (taskSerial.state == 1) {
+    if (millis() - taskSerial.time >= 100) {
+      taskSerial.state = 0;
     }
   }
   
@@ -109,39 +108,42 @@ void loop() {
   int btnShiftUp, btnShiftDown;
   btnShiftUp = digitalRead(PIN_BTN_SHIFT_UP);
   btnShiftDown = digitalRead(PIN_BTN_SHIFT_DOWN);
-  if (taskStateGearShifting == 0) {
+  if (taskGear.state == 0) {
     if (!btnShiftUp || !btnShiftDown) {
       if (btnShiftUpLast == LOW && btnShiftUp == HIGH) {
+        digitalWrite(PIN_RELAY_INJECTION_CUT, LOW);// TODO
         digitalWrite(PIN_RELAY_SHIFT_UP, LOW);
-        taskStateGearShifting = 100;
-        taskTimeGearShifting = millis();
+        taskGear.state = 100;
+        taskGear.time = millis();
       } else if (btnShiftDownLast == LOW && btnShiftDown == HIGH) {
         digitalWrite(PIN_RELAY_SHIFT_DOWN, LOW);
-        taskStateGearShifting = 200;
-        taskTimeGearShifting = millis();
+        taskGear.state = 200;
+        taskGear.time = millis();
       }
     }
-  } else if (taskStateGearShifting == 100) {
+  } else if (taskGear.state == 100) {// shift up
     long cur = millis();
-    if (cur - taskTimeGearShifting >= 11) {
+    if (cur - taskGear.time >= 11) {
       digitalWrite(PIN_RELAY_SHIFT_UP, HIGH);
-      taskStateGearShifting++;
-      taskTimeGearShifting = cur;
+      taskGear.state++;
+      taskGear.time = cur;
     }
-  } else if (taskStateGearShifting == 101) {
-    if (millis() - taskTimeGearShifting >= 1000) {
-      taskStateGearShifting = 0;
+  } else if (taskGear.state == 101) {
+    if (millis() - taskGear.time >= 1000) {
+      taskGear.state = 0;
     }
-  } else if (taskStateGearShifting == 200) {
+  } else if (taskGear.state == 102) {
+    
+  } else if (taskGear.state == 200) {// shift down
     long cur = millis();
-    if (cur - taskTimeGearShifting >= 11) {
+    if (cur - taskGear.time >= 11) {
       digitalWrite(PIN_RELAY_SHIFT_DOWN, HIGH);
-      taskStateGearShifting++;
-      taskTimeGearShifting = cur;
+      taskGear.state++;
+      taskGear.time = cur;
     }
-  } else if (taskStateGearShifting == 201) {
-    if (millis() - taskTimeGearShifting >= 1000) {
-      taskStateGearShifting = 0;
+  } else if (taskGear.state == 201) {
+    if (millis() - taskGear.time >= 1000) {
+      taskGear.state = 0;
     }
   }
   btnShiftUpLast = btnShiftUp;
@@ -150,7 +152,7 @@ void loop() {
   // launch control
   int btnLaunchCtr;
   btnLaunchCtr = digitalRead(PIN_BTN_LAUNCH_CTR);
-  if (taskStateLaunchCtr == 0) {
+  if (taskLaunch.state == 0) {
     if (btnLaunchCtr) {
       int rpm = analogRead(PIN_RPM) / 1024.0 * 17000.0;
 
@@ -160,14 +162,14 @@ void loop() {
         digitalWrite(PIN_RELAY_INJECTION_CUT, HIGH);
       }
 
-      taskStateLaunchCtr++;
-      taskTimeLaunchCtr = millis();
+      taskLaunch.state++;
+      taskLaunch.time = millis();
     } else {
       digitalWrite(PIN_RELAY_INJECTION_CUT, HIGH);
     }
-  } else if (taskStateLaunchCtr == 1) {
-    if (millis() - taskTimeLaunchCtr >= 10) {
-      taskStateLaunchCtr = 0;
+  } else if (taskLaunch.state == 1) {
+    if (millis() - taskLaunch.time >= 10) {
+      taskLaunch.state = 0;
     }
   }
   btnLaunchCtrLast = btnLaunchCtr;
