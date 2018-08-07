@@ -105,17 +105,22 @@ void loop() {
   }
   
   // gear shifting
+  //
+  // injection cut |----------------------------------|
+  // cylinder       |---------------|
+  // clutch         |
   int btnShiftUp, btnShiftDown;
   btnShiftUp = digitalRead(PIN_BTN_SHIFT_UP);
   btnShiftDown = digitalRead(PIN_BTN_SHIFT_DOWN);
   if (taskGear.state == 0) {
     if (!btnShiftUp || !btnShiftDown) {
-      if (btnShiftUpLast == LOW && btnShiftUp == HIGH) {
-        digitalWrite(PIN_RELAY_INJECTION_CUT, LOW);// TODO
+      if (btnShiftUpLast == LOW && btnShiftUp == HIGH) {// shift up
+        digitalWrite(PIN_RELAY_INJECTION_CUT, LOW);
         digitalWrite(PIN_RELAY_SHIFT_UP, LOW);
+        //digitalWrite(PIN_RELAY_CLUTCH, LOW);// TODO clutch
         taskGear.state = 100;
         taskGear.time = millis();
-      } else if (btnShiftDownLast == LOW && btnShiftDown == HIGH) {
+      } else if (btnShiftDownLast == LOW && btnShiftDown == HIGH) {// shift down
         digitalWrite(PIN_RELAY_SHIFT_DOWN, LOW);
         taskGear.state = 200;
         taskGear.time = millis();
@@ -123,17 +128,22 @@ void loop() {
     }
   } else if (taskGear.state == 100) {// shift up
     long cur = millis();
-    if (cur - taskGear.time >= 11) {
+    if (cur - taskGear.time >= 200) {
       digitalWrite(PIN_RELAY_SHIFT_UP, HIGH);
       taskGear.state++;
       taskGear.time = cur;
     }
   } else if (taskGear.state == 101) {
-    if (millis() - taskGear.time >= 1000) {
-      taskGear.state = 0;
+    long cur = millis();
+    if (cur - taskGear.time >= 500) {
+      digitalWrite(PIN_RELAY_INJECTION_CUT, HIGH);
+      taskGear.state++;
+      taskGear.time = cur;
     }
   } else if (taskGear.state == 102) {
-    
+    if (millis() - taskGear.time >= 10) {
+      taskGear.state = 0;
+    }
   } else if (taskGear.state == 200) {// shift down
     long cur = millis();
     if (cur - taskGear.time >= 11) {
