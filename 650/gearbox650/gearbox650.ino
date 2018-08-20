@@ -5,9 +5,20 @@
  * Ajou University, Suwon, Korea, 2018.
  */
 
+#define TASK_SERIAL
+#define TASK_GEAR_SHIFTING
+// #define TASK_LAUNCH_CONTROL
+// #define TASK_CC1101_COM
+
 /*
  * Constants
  */
+static const int BTN_PRESS_TIME = 100;
+static const int CYLINDER_TIME = 600;
+ 
+// serial communication
+static const int SERIAL_DELAY = 500; // milli second
+
 // gear shifting
 static const int PIN_BTN_SHIFT_UP = 8;
 static const int PIN_BTN_SHIFT_DOWN = 9;
@@ -16,8 +27,11 @@ static const int PIN_RELAY_SHIFT_UP = 3;
 static const int PIN_RELAY_SHIFT_DOWN = 4;
 static const int PIN_RELAY_CLUTCH = 5;
 
-// injection cut
-static const int PIN_RELAY_INJECTION_CUT = 6;
+static const int GEAR_SHIFTING_DELAY = 100;
+
+// ignition cut
+static const int PIN_RELAY_INJECTION_CUT = 6; // injection cut -> ignition cut 으로 바뀜. 나중에 코드상에서도 바꾸도록 할 것.
+static const int IGNITION_CUT_TIME = 150; // ms
 
 // launch control
 static const int PIN_BTN_LAUNCH_CTR = 7;
@@ -56,6 +70,7 @@ struct Task {
 Task taskSerial; // Serial communication
 Task taskGear; // Gear shifting
 Task taskLaunch; // Launch control
+Task taskCC1101; // CC1101 Module communication
 
 void setup() {
   // init serial communication
@@ -85,7 +100,14 @@ void setup() {
 }
 
 void loop() {
-  // serial
+  runTaskSerial();
+  runTaskGearShifting();
+  runTaskLaunchControl();
+  runTaskCC1101COM();
+}
+
+void runTaskSerial() {
+#ifdef TASK_SERIAL
   if (taskSerial.state == 0) {
     Serial.print("BTN_SHIFT_UP: ");
     Serial.print(digitalRead(PIN_BTN_SHIFT_UP));
@@ -99,67 +121,106 @@ void loop() {
     taskSerial.state++;
     taskSerial.time = millis();
   } else if (taskSerial.state == 1) {
-    if (millis() - taskSerial.time >= 100) {
+    if (millis() - taskSerial.time >= SERIAL_DELAY) {
       taskSerial.state = 0;
     }
   }
-  
-  // gear shifting
-  //
-  // injection cut |----------------------------------|
-  // cylinder       |---------------|
-  // clutch         |
+#else
+  /* nothing */
+#endif
+}
+
+// injection cut |----------------------------------|
+// cylinder       |---------------|
+// clutch         |
+void runTaskGearShifting() {
+#ifdef TASK_GEAR_SHIFTING
   int btnShiftUp, btnShiftDown;
   btnShiftUp = digitalRead(PIN_BTN_SHIFT_UP);
   btnShiftDown = digitalRead(PIN_BTN_SHIFT_DOWN);
   if (taskGear.state == 0) {
     if (!btnShiftUp || !btnShiftDown) {
-      if (btnShiftUpLast == LOW && btnShiftUp == HIGH) {// shift up
-        digitalWrite(PIN_RELAY_INJECTION_CUT, LOW);
-        digitalWrite(PIN_RELAY_SHIFT_UP, LOW);
-        //digitalWrite(PIN_RELAY_CLUTCH, LOW);// TODO clutch
-        taskGear.state = 100;
+      if (btnShiftUpLast == LOW && btnShiftUp == HIGH) { // shift up
+        taskGear.state = 1000;
         taskGear.time = millis();
-      } else if (btnShiftDownLast == LOW && btnShiftDown == HIGH) {// shift down
-        digitalWrite(PIN_RELAY_SHIFT_DOWN, LOW);
-        taskGear.state = 200;
+      } else if (btnShiftDownLast == LOW && btnShiftDown == HIGH) { // shift down
+        taskGear.state = 2000;
         taskGear.time = millis();
       }
     }
-  } else if (taskGear.state == 100) {// shift up
+  } else if (taskGear.state == 1000) { // check shift up signal
     long cur = millis();
-    if (cur - taskGear.time >= 200) {
-      digitalWrite(PIN_RELAY_SHIFT_UP, HIGH);
+    if (cur - taskGear.time >= BTN_PRESS_TIME) {
+      if (btnShiftUp) {
+        digitalWrite(PIN_RELAY_INJECTION_CUT, LOW);
+        digitalWrite(PIN_RELAY_SHIFT_UP, LOW);
+        // digitalWrite(PIN_RELAY_CLUTCH, LOW); // TODO clutch
+        taskGear.state = 100;
+        taskGear.time = cur;
+      } else {
+        taskGear.state = 0;
+      }
+    }
+  } else if (taskGear.state == 2000) { // check shift down signal
+    long cur = millis();
+    if (cur - taskGear.time >= BTN_PRESS_TIME) {
+      if (btnShiftDown) {
+        digitalWrite(PIN_RELAY_SHIFT_DOWN, LOW);
+        taskGear.state = 200;
+        taskGear.time = cur;
+      } else {
+        taskGear.state = 0;
+      }
+    }
+  } else if (taskGear.state == 100) { // shift up
+    long cur = millis();
+    if (cur - taskGear.time >= IGNITION_CUT_TIME) {
+      Serial.println("Shift Up");
+      digitalWrite(PIN_RELAY_INJECTION_CUT, HIGH);
       taskGear.state++;
       taskGear.time = cur;
     }
   } else if (taskGear.state == 101) {
     long cur = millis();
-    if (cur - taskGear.time >= 500) {
-      digitalWrite(PIN_RELAY_INJECTION_CUT, HIGH);
+    if (cur - taskGear.time >= CYLINDER_TIME - IGNITION_CUT_TIME) {
+      digitalWrite(PIN_RELAY_SHIFT_UP, HIGH);
       taskGear.state++;
-      taskGear.time = cur;
     }
   } else if (taskGear.state == 102) {
-    if (millis() - taskGear.time >= 10) {
+    if (!btnShiftUp) {
+      taskGear.state++;
+      taskGear.time = millis();
+    }
+  } else if (taskGear.state == 103) {
+    if (millis() - taskGear.time >= GEAR_SHIFTING_DELAY) {
       taskGear.state = 0;
     }
   } else if (taskGear.state == 200) {// shift down
     long cur = millis();
-    if (cur - taskGear.time >= 11) {
+    if (cur - taskGear.time >= CYLINDER_TIME) {
+      Serial.println("Shift Down");
       digitalWrite(PIN_RELAY_SHIFT_DOWN, HIGH);
       taskGear.state++;
-      taskGear.time = cur;
     }
   } else if (taskGear.state == 201) {
-    if (millis() - taskGear.time >= 1000) {
+    if (!btnShiftDown) {
+      taskGear.state++;
+      taskGear.time = millis();
+    }
+  } else if (taskGear.state == 202) {
+    if (millis() - taskGear.time >= GEAR_SHIFTING_DELAY) {
       taskGear.state = 0;
     }
   }
   btnShiftUpLast = btnShiftUp;
   btnShiftDownLast = btnShiftDown;
+#else
+  /* nothing */
+#endif
+}
 
-  // launch control
+void runTaskLaunchControl() {
+#ifdef TASK_LAUNCH_CONTROL
   int btnLaunchCtr;
   btnLaunchCtr = digitalRead(PIN_BTN_LAUNCH_CTR);
   if (taskLaunch.state == 0) {
@@ -183,8 +244,16 @@ void loop() {
     }
   }
   btnLaunchCtrLast = btnLaunchCtr;
+#else
+  /* nothing */
+#endif
+}
 
-  // CC1101 module
+void runTaskCC1101COM() {
+#ifdef TASK_CC1101_COM
   
+#else
+  /* nothing */
+#endif
 }
 
